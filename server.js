@@ -540,9 +540,10 @@ app.post('/api/translate-text', async (req, res) => {
       return res.status(400).json({ error: '翻訳先言語が指定されていません' });
     }
 
-    if (text.length > 5000) {
+    // DeepL API limit is 50,000 characters per request
+    if (text.length > 50000) {
       console.log('❌ Text too long:', text.length);
-      return res.status(400).json({ error: 'テキストが長すぎます（最大5000文字）' });
+      return res.status(400).json({ error: 'テキストが長すぎます（最大50,000文字）' });
     }
 
     const clientIp = getClientIp(req);

@@ -448,7 +448,7 @@
                 <div class="text-box">
                     <label for="sourceText">翻訳元テキスト</label>
                     <textarea id="sourceText" placeholder="翻訳したいテキストを入力してください..."></textarea>
-                    <div class="char-count" id="charCount">0 / 5000 文字</div>
+                    <div class="char-count" id="charCount">0 / 50,000 文字</div>
                 </div>
                 <div class="text-box">
                     <label for="translatedText">翻訳結果</label>
@@ -681,9 +681,9 @@
         // Character count
         sourceText.addEventListener('input', () => {
             const length = sourceText.value.length;
-            charCount.textContent = `${length} / 5000 文字`;
+            charCount.textContent = `${length.toLocaleString()} / 50,000 文字`;
             
-            if (length > 5000) {
+            if (length > 50000) {
                 charCount.style.color = '#dc3545';
             } else {
                 charCount.style.color = '#999';
@@ -699,8 +699,8 @@
                 return;
             }
 
-            if (text.length > 5000) {
-                showTextStatus('テキストが長すぎます（最大5000文字）', 'error');
+            if (text.length > 50000) {
+                showTextStatus('テキストが長すぎます（最大50,000文字）', 'error');
                 return;
             }
 
