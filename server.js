@@ -13,10 +13,20 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Determine DeepL API endpoint based on key type
+// Free API keys end with ":fx", Pro keys don't
+const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
+const isFreePlan = DEEPL_API_KEY && DEEPL_API_KEY.endsWith(':fx');
+const DEEPL_BASE_URL = isFreePlan 
+  ? 'https://api-free.deepl.com/v2' 
+  : 'https://api.deepl.com/v2';
+
 // Check environment variables
 console.log('Environment check:');
 console.log('- PORT:', PORT);
-console.log('- DEEPL_API_KEY:', process.env.DEEPL_API_KEY ? '✓ Set (length: ' + process.env.DEEPL_API_KEY.length + ')' : '✗ Not set');
+console.log('- DEEPL_API_KEY:', DEEPL_API_KEY ? '✓ Set (length: ' + DEEPL_API_KEY.length + ')' : '✗ Not set');
+console.log('- API Plan:', isFreePlan ? 'Free' : 'Pro');
+console.log('- API Endpoint:', DEEPL_BASE_URL);
 console.log('- NODE_ENV:', process.env.NODE_ENV || 'development');
 
 // Middleware
@@ -127,14 +137,14 @@ async function translateText(text, targetLang, sourceLang = null) {
 async function translateChunk(text, targetLang, sourceLang = null) {
   try {
     const params = new URLSearchParams();
-    params.append('auth_key', process.env.DEEPL_API_KEY);
+    params.append('auth_key', DEEPL_API_KEY);
     params.append('text', text);
     params.append('target_lang', targetLang);
     if (sourceLang) {
       params.append('source_lang', sourceLang);
     }
 
-    const response = await axios.post('https://api-free.deepl.com/v2/translate', params, {
+    const response = await axios.post(`${DEEPL_BASE_URL}/translate`, params, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
       },
@@ -312,9 +322,9 @@ app.post('/api/translate', upload.single('file'), async (req, res) => {
 // API endpoint: Get supported languages
 app.get('/api/languages', async (req, res) => {
   try {
-    const response = await axios.get('https://api-free.deepl.com/v2/languages', {
+    const response = await axios.get(`${DEEPL_BASE_URL}/languages`, {
       params: {
-        auth_key: process.env.DEEPL_API_KEY,
+        auth_key: DEEPL_API_KEY,
         type: 'target'
       }
     });
@@ -375,7 +385,9 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    apiKeyConfigured: !!process.env.DEEPL_API_KEY
+    apiKeyConfigured: !!DEEPL_API_KEY,
+    apiEndpoint: DEEPL_BASE_URL,
+    apiPlan: isFreePlan ? 'Free' : 'Pro'
   });
 });
 
@@ -384,7 +396,9 @@ app.listen(PORT, () => {
   console.log('🚀 PDF Translator Server Started');
   console.log('='.repeat(50));
   console.log(`📍 Port: ${PORT}`);
-  console.log(`🔑 DeepL API Key: ${process.env.DEEPL_API_KEY ? '✓ Configured' : '✗ Missing'}`);
+  console.log(`🔑 DeepL API Key: ${DEEPL_API_KEY ? '✓ Configured' : '✗ Missing'}`);
+  console.log(`📡 API Endpoint: ${DEEPL_BASE_URL}`);
+  console.log(`💳 API Plan: ${isFreePlan ? 'Free' : 'Pro'}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log('='.repeat(50));
 });
