@@ -13,6 +13,12 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Check environment variables
+console.log('Environment check:');
+console.log('- PORT:', PORT);
+console.log('- DEEPL_API_KEY:', process.env.DEEPL_API_KEY ? '✓ Set (length: ' + process.env.DEEPL_API_KEY.length + ')' : '✗ Not set');
+console.log('- NODE_ENV:', process.env.NODE_ENV || 'development');
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -80,14 +86,64 @@ function getClientIp(req) {
 // DeepL API translation function
 async function translateText(text, targetLang, sourceLang = null) {
   try {
-    const response = await axios.post('https://api-free.deepl.com/v2/translate', null, {
-      params: {
-        auth_key: process.env.DEEPL_API_KEY,
-        text: text,
-        target_lang: targetLang,
-        ...(sourceLang && { source_lang: sourceLang })
+    console.log('Starting translation. Text length:', text.length, 'Target:', targetLang);
+    
+    // DeepL API has a limit of 50,000 characters per request
+    const MAX_CHARS = 45000; // Use 45k to be safe
+    
+    if (text.length > MAX_CHARS) {
+      console.log('Text too long, splitting into chunks');
+      // Split text into chunks
+      const chunks = [];
+      for (let i = 0; i < text.length; i += MAX_CHARS) {
+        chunks.push(text.substring(i, i + MAX_CHARS));
       }
+      
+      // Translate each chunk
+      const translatedChunks = [];
+      let detectedLang = null;
+      
+      for (let i = 0; i < chunks.length; i++) {
+        console.log(`Translating chunk ${i + 1}/${chunks.length}`);
+        const result = await translateChunk(chunks[i], targetLang, sourceLang);
+        translatedChunks.push(result.translatedText);
+        if (!detectedLang) detectedLang = result.detectedSourceLang;
+      }
+      
+      return {
+        translatedText: translatedChunks.join(''),
+        detectedSourceLang: detectedLang
+      };
+    } else {
+      return await translateChunk(text, targetLang, sourceLang);
+    }
+  } catch (error) {
+    console.error('Translation error:', error);
+    throw error;
+  }
+}
+
+// Translate a single chunk
+async function translateChunk(text, targetLang, sourceLang = null) {
+  try {
+    const params = new URLSearchParams();
+    params.append('auth_key', process.env.DEEPL_API_KEY);
+    params.append('text', text);
+    params.append('target_lang', targetLang);
+    if (sourceLang) {
+      params.append('source_lang', sourceLang);
+    }
+
+    const response = await axios.post('https://api-free.deepl.com/v2/translate', params, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      timeout: 60000, // 60 second timeout
+      maxContentLength: 100 * 1024 * 1024, // 100MB
+      maxBodyLength: 100 * 1024 * 1024
     });
+
+    console.log('Translation successful. Response length:', response.data.translations[0].text.length);
 
     return {
       translatedText: response.data.translations[0].text,
@@ -95,6 +151,13 @@ async function translateText(text, targetLang, sourceLang = null) {
     };
   } catch (error) {
     console.error('DeepL API Error:', error.response?.data || error.message);
+    console.error('Error code:', error.code);
+    console.error('Error config:', error.config?.url);
+    
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('翻訳がタイムアウトしました。テキストが長すぎる可能性があります。');
+    }
+    
     throw new Error('翻訳に失敗しました: ' + (error.response?.data?.message || error.message));
   }
 }
@@ -317,6 +380,11 @@ app.get('/api/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log(`DeepL API Key configured: ${process.env.DEEPL_API_KEY ? 'Yes' : 'No'}`);
+  console.log('='.repeat(50));
+  console.log('🚀 PDF Translator Server Started');
+  console.log('='.repeat(50));
+  console.log(`📍 Port: ${PORT}`);
+  console.log(`🔑 DeepL API Key: ${process.env.DEEPL_API_KEY ? '✓ Configured' : '✗ Missing'}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log('='.repeat(50));
 });
