@@ -30,8 +30,14 @@ console.log('- API Endpoint:', DEEPL_BASE_URL);
 console.log('- NODE_ENV:', process.env.NODE_ENV || 'development');
 
 // Middleware
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: '*', // Allow all origins for now
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static('public'));
 
 // Configure multer for file upload
@@ -255,19 +261,29 @@ async function createTranslatedPDF(originalBuffer, translatedText) {
 
 // API endpoint: Translate PDF
 app.post('/api/translate', upload.single('file'), async (req, res) => {
+  const startTime = Date.now();
   try {
+    console.log('='.repeat(50));
+    console.log('📥 New translation request received');
+    
     if (!req.file) {
+      console.log('❌ No file uploaded');
       return res.status(400).json({ error: 'ファイルがアップロードされていません' });
     }
+
+    console.log('📄 File:', req.file.originalname, '- Size:', (req.file.size / 1024).toFixed(2), 'KB');
 
     const { targetLang, sourceLang } = req.body;
 
     if (!targetLang) {
+      console.log('❌ No target language specified');
       return res.status(400).json({ error: '翻訳先言語が指定されていません' });
     }
 
+    console.log('🌐 Translation:', sourceLang || 'auto', '→', targetLang);
+
     const clientIp = getClientIp(req);
-    console.log(`Translation request from IP: ${clientIp}`);
+    console.log(`🔍 Client IP: ${clientIp}`);
 
     // Extract text from PDF
     const pdfData = await extractTextFromPDF(req.file.buffer);
@@ -310,9 +326,16 @@ app.post('/api/translate', upload.single('file'), async (req, res) => {
     });
 
     res.send(translatedPdfBuffer);
+    
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`✅ Translation completed in ${elapsed}s`);
+    console.log('='.repeat(50));
 
   } catch (error) {
-    console.error('Translation error:', error);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.error(`❌ Translation failed after ${elapsed}s:`, error.message);
+    console.error('Error stack:', error.stack);
+    console.log('='.repeat(50));
     res.status(500).json({
       error: error.message || '翻訳処理中にエラーが発生しました'
     });
@@ -382,12 +405,14 @@ app.get('/api/logs', async (req, res) => {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
+  console.log('❤️ Health check from:', getClientIp(req));
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
     apiKeyConfigured: !!DEEPL_API_KEY,
     apiEndpoint: DEEPL_BASE_URL,
-    apiPlan: isFreePlan ? 'Free' : 'Pro'
+    apiPlan: isFreePlan ? 'Free' : 'Pro',
+    uptime: process.uptime()
   });
 });
 

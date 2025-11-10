@@ -426,14 +426,25 @@
                     formData.append('sourceLang', sourceLang.value);
                 }
 
+                // Create abort controller for timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+
                 const response = await fetch('/api/translate', {
                     method: 'POST',
-                    body: formData
-                });
+                    body: formData,
+                    signal: controller.signal
+                }).finally(() => clearTimeout(timeoutId));
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || '翻訳に失敗しました');
+                    let errorMessage = '翻訳に失敗しました';
+                    try {
+                        const error = await response.json();
+                        errorMessage = error.error || errorMessage;
+                    } catch (e) {
+                        errorMessage = `サーバーエラー (${response.status})`;
+                    }
+                    throw new Error(errorMessage);
                 }
 
                 // Download translated PDF
@@ -451,7 +462,15 @@
 
             } catch (error) {
                 console.error('Translation error:', error);
-                showStatus(`❌ エラー: ${error.message}`, 'error');
+                let errorMessage = error.message;
+                
+                if (error.name === 'AbortError') {
+                    errorMessage = 'タイムアウト: 翻訳に時間がかかりすぎています。PDFのサイズを小さくして再試行してください。';
+                } else if (error.message === 'Failed to fetch') {
+                    errorMessage = 'サーバーに接続できません。ネットワーク接続を確認するか、しばらく待ってから再試行してください。';
+                }
+                
+                showStatus(`❌ エラー: ${errorMessage}`, 'error');
             } finally {
                 translateBtn.disabled = false;
                 translateBtn.innerHTML = '翻訳する';
