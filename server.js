@@ -244,10 +244,10 @@ async function ensureJapaneseFont() {
   }
 }
 
-// Create translated PDF preserving original format
+// Create translated PDF - overlay on original pages with complete white background
 async function createTranslatedPDF(originalBuffer, translatedText) {
   try {
-    console.log('📄 Creating PDF preserving original format. Text length:', translatedText.length);
+    console.log('📄 Creating PDF with full translation overlay. Text length:', translatedText.length);
     
     // Get Japanese font bytes
     const fontBytes = await ensureJapaneseFont();
@@ -255,9 +255,9 @@ async function createTranslatedPDF(originalBuffer, translatedText) {
     // Load the original PDF
     const originalPdf = await PDFDocument.load(originalBuffer);
     const originalPages = originalPdf.getPages();
-    const pageCount = originalPages.length;
+    const originalPageCount = originalPages.length;
     
-    console.log(`📑 Original PDF has ${pageCount} pages`);
+    console.log(`📑 Original PDF has ${originalPageCount} pages`);
     
     // Register fontkit
     originalPdf.registerFontkit(fontkit);
@@ -267,84 +267,119 @@ async function createTranslatedPDF(originalBuffer, translatedText) {
     const customFont = await originalPdf.embedFont(fontBytes);
     console.log('✓ Font embedded successfully');
     
-    // Calculate text per page (rough estimate)
-    const paragraphs = translatedText.split('\n').filter(p => p.trim());
-    const textPerPage = Math.ceil(paragraphs.length / pageCount);
+    // Prepare text rendering
+    const fontSize = 11;
+    const lineHeight = fontSize * 1.6;
+    const margin = 50;
     
-    console.log(`📝 Distributing ${paragraphs.length} paragraphs across ${pageCount} pages`);
+    // Split text into paragraphs
+    const paragraphs = translatedText.split('\n');
     
-    // Add translated text to each page
-    for (let pageIndex = 0; pageIndex < pageCount; pageIndex++) {
-      const page = originalPages[pageIndex];
-      const { width, height } = page.getSize();
+    console.log(`📝 Processing ${paragraphs.length} paragraphs`);
+    
+    let currentPageIndex = 0;
+    let currentPage = null;
+    let y = 0;
+    
+    // Function to prepare a page for writing
+    const preparePage = () => {
+      if (currentPageIndex < originalPageCount) {
+        // Use existing page
+        currentPage = originalPages[currentPageIndex];
+      } else {
+        // Add new page with same size as first page
+        const firstPage = originalPages[0];
+        const { width, height } = firstPage.getSize();
+        currentPage = originalPdf.addPage([width, height]);
+      }
       
-      // Get paragraphs for this page
-      const startIdx = pageIndex * textPerPage;
-      const endIdx = Math.min(startIdx + textPerPage, paragraphs.length);
-      const pageParagraphs = paragraphs.slice(startIdx, endIdx);
+      const { width, height } = currentPage.getSize();
       
-      if (pageParagraphs.length === 0) continue;
-      
-      // Add semi-transparent white background
-      page.drawRectangle({
-        x: 40,
-        y: 40,
-        width: width - 80,
-        height: height - 80,
+      // Cover entire page with white rectangle to hide original text
+      currentPage.drawRectangle({
+        x: 0,
+        y: 0,
+        width: width,
+        height: height,
         color: rgb(1, 1, 1),
-        opacity: 0.85
+        opacity: 1.0 // Completely opaque
       });
       
-      // Draw text
-      const fontSize = 10;
-      const lineHeight = fontSize * 1.5;
-      const margin = 50;
-      const maxWidth = width - (margin * 2);
-      let y = height - margin;
+      currentPageIndex++;
+      y = height - margin;
       
-      for (const paragraph of pageParagraphs) {
-        if (y < margin + lineHeight * 2) break; // Stop if near bottom
+      return { width, height };
+    };
+    
+    // Start with first page
+    let { width, height } = preparePage();
+    const maxWidth = width - (margin * 2);
+    
+    // Render all paragraphs
+    for (const paragraph of paragraphs) {
+      if (!paragraph.trim()) {
+        y -= lineHeight * 0.5; // Small space for empty lines
+        continue;
+      }
+      
+      // Wrap text to fit page width
+      const words = paragraph.split(/\s+/);
+      let currentLine = '';
+      
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i];
+        const testLine = currentLine + (currentLine ? ' ' : '') + word;
+        const textWidth = customFont.widthOfTextAtSize(testLine, fontSize);
         
-        // Wrap text to fit page width
-        const words = paragraph.split(' ');
-        let currentLine = '';
-        
-        for (const word of words) {
-          const testLine = currentLine + (currentLine ? ' ' : '') + word;
-          const textWidth = customFont.widthOfTextAtSize(testLine, fontSize);
-          
-          if (textWidth < maxWidth) {
-            currentLine = testLine;
-          } else {
-            if (currentLine && y >= margin) {
-              page.drawText(currentLine, {
-                x: margin,
-                y: y,
-                size: fontSize,
-                font: customFont,
-                color: rgb(0, 0, 0)
-              });
-              y -= lineHeight;
+        if (textWidth < maxWidth) {
+          currentLine = testLine;
+        } else {
+          // Draw current line
+          if (currentLine) {
+            // Check if we need a new page
+            if (y < margin + lineHeight) {
+              const pageInfo = preparePage();
+              width = pageInfo.width;
+              height = pageInfo.height;
             }
-            currentLine = word;
+            
+            currentPage.drawText(currentLine, {
+              x: margin,
+              y: y,
+              size: fontSize,
+              font: customFont,
+              color: rgb(0, 0, 0)
+            });
+            
+            y -= lineHeight;
           }
+          currentLine = word;
+        }
+      }
+      
+      // Draw remaining line
+      if (currentLine) {
+        // Check if we need a new page
+        if (y < margin + lineHeight) {
+          const pageInfo = preparePage();
+          width = pageInfo.width;
+          height = pageInfo.height;
         }
         
-        // Draw remaining line
-        if (currentLine && y >= margin) {
-          page.drawText(currentLine, {
-            x: margin,
-            y: y,
-            size: fontSize,
-            font: customFont,
-            color: rgb(0, 0, 0)
-          });
-          y -= lineHeight * 1.2; // Extra space between paragraphs
-        }
+        currentPage.drawText(currentLine, {
+          x: margin,
+          y: y,
+          size: fontSize,
+          font: customFont,
+          color: rgb(0, 0, 0)
+        });
+        
+        y -= lineHeight * 1.3; // Extra space between paragraphs
       }
     }
     
-    console.log(`✓ PDF overlay completed with ${pageCount} pages`);
+    const finalPageCount = originalPdf.getPageCount();
+    console.log(`✓ Translation complete. Final PDF: ${finalPageCount} pages (original: ${originalPageCount})`);
     
     const pdfBytes = await originalPdf.save();
     return Buffer.from(pdfBytes);
