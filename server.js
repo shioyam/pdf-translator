@@ -206,11 +206,48 @@ async function extractTextFromPDF(buffer) {
   }
 }
 
-// Create translated PDF using PDFKit (supports Unicode/Japanese)
+// Download font if not exists
+async function ensureJapaneseFont() {
+  const fontDir = path.join(__dirname, 'fonts');
+  const fontPath = path.join(fontDir, 'NotoSansJP-Regular.ttf');
+  
+  try {
+    // Check if font already exists
+    await fs.access(fontPath);
+    console.log('Japanese font already exists');
+    return fontPath;
+  } catch (error) {
+    console.log('Downloading Japanese font...');
+    
+    try {
+      // Create fonts directory
+      await fs.mkdir(fontDir, { recursive: true });
+      
+      // Download Noto Sans JP from Google Fonts
+      const fontUrl = 'https://github.com/google/fonts/raw/main/ofl/notosansjp/NotoSansJP-Regular.ttf';
+      const response = await axios.get(fontUrl, { responseType: 'arraybuffer' });
+      
+      // Save font file
+      await fs.writeFile(fontPath, response.data);
+      console.log('Japanese font downloaded successfully');
+      
+      return fontPath;
+    } catch (downloadError) {
+      console.error('Failed to download font:', downloadError.message);
+      // Return null to use fallback
+      return null;
+    }
+  }
+}
+
+// Create translated PDF using PDFKit with Japanese font support
 async function createTranslatedPDF(originalBuffer, translatedText) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     try {
       console.log('Creating PDF with PDFKit. Text length:', translatedText.length);
+      
+      // Get Japanese font
+      const fontPath = await ensureJapaneseFont();
       
       // Create a new PDF document
       const doc = new PDFKit({
@@ -234,9 +271,18 @@ async function createTranslatedPDF(originalBuffer, translatedText) {
       });
       doc.on('error', reject);
 
-      // Set font size and line height
+      // Register and use Japanese font if available
+      if (fontPath) {
+        try {
+          doc.font(fontPath);
+          console.log('Using Japanese font');
+        } catch (fontError) {
+          console.warn('Failed to load Japanese font, using default:', fontError.message);
+        }
+      }
+
+      // Set font size
       doc.fontSize(12);
-      const lineHeight = 18;
 
       // Split text into paragraphs
       const paragraphs = translatedText.split('\n');
