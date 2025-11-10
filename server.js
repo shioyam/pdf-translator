@@ -208,54 +208,89 @@ async function extractTextFromPDF(buffer) {
 // Create translated PDF
 async function createTranslatedPDF(originalBuffer, translatedText) {
   try {
+    console.log('Creating PDF. Text length:', translatedText.length);
+    
     const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage();
-    const { width, height } = page.getSize();
-
-    // Split text into lines that fit the page width
+    
+    // Embed a standard font that supports more characters
+    const font = await pdfDoc.embedFont('Helvetica');
+    
     const fontSize = 12;
-    const maxWidth = width - 100;
-    const lineHeight = fontSize * 1.2;
-
-    const words = translatedText.split(' ');
+    const lineHeight = fontSize * 1.5;
+    const margin = 50;
+    const pageWidth = 595; // A4 width in points
+    const pageHeight = 842; // A4 height in points
+    const maxWidth = pageWidth - (margin * 2);
+    
+    // Split text into lines
     const lines = [];
-    let currentLine = '';
-
-    for (const word of words) {
-      const testLine = currentLine + (currentLine ? ' ' : '') + word;
-      if (testLine.length * fontSize * 0.5 < maxWidth) {
-        currentLine = testLine;
-      } else {
-        if (currentLine) lines.push(currentLine);
-        currentLine = word;
+    const paragraphs = translatedText.split('\n');
+    
+    for (const paragraph of paragraphs) {
+      if (!paragraph.trim()) {
+        lines.push(''); // Preserve empty lines
+        continue;
       }
+      
+      // Word wrap for each paragraph
+      const words = paragraph.split(' ');
+      let currentLine = '';
+      
+      for (const word of words) {
+        const testLine = currentLine + (currentLine ? ' ' : '') + word;
+        const textWidth = font.widthOfTextAtSize(testLine, fontSize);
+        
+        if (textWidth < maxWidth) {
+          currentLine = testLine;
+        } else {
+          if (currentLine) lines.push(currentLine);
+          currentLine = word;
+        }
+      }
+      
+      if (currentLine) lines.push(currentLine);
     }
-    if (currentLine) lines.push(currentLine);
-
+    
+    console.log(`Text split into ${lines.length} lines`);
+    
     // Draw text on pages
-    let currentPage = page;
-    let y = height - 50;
-
+    let currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
+    let y = pageHeight - margin;
+    
     for (const line of lines) {
-      if (y < 50) {
-        currentPage = pdfDoc.addPage();
-        y = currentPage.getSize().height - 50;
+      // Check if we need a new page
+      if (y < margin + lineHeight) {
+        currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
+        y = pageHeight - margin;
       }
-
-      currentPage.drawText(line, {
-        x: 50,
-        y: y,
-        size: fontSize
-      });
-
+      
+      // Draw the line (only if it contains printable characters)
+      try {
+        if (line.trim()) {
+          currentPage.drawText(line, {
+            x: margin,
+            y: y,
+            size: fontSize,
+            font: font,
+            maxWidth: maxWidth
+          });
+        }
+      } catch (drawError) {
+        // If drawing fails (e.g., unsupported characters), log and skip
+        console.warn('Failed to draw line:', line.substring(0, 50), drawError.message);
+      }
+      
       y -= lineHeight;
     }
-
+    
+    console.log(`PDF created with ${pdfDoc.getPageCount()} pages`);
+    
     const pdfBytes = await pdfDoc.save();
     return Buffer.from(pdfBytes);
   } catch (error) {
     console.error('PDF creation error:', error);
-    throw new Error('翻訳済みPDFの作成に失敗しました');
+    console.error('Error stack:', error.stack);
+    throw new Error('翻訳済みPDFの作成に失敗しました: ' + error.message);
   }
 }
 
@@ -304,6 +339,37 @@ app.post('/api/translate', upload.single('file'), async (req, res) => {
       targetLang,
       sourceLang
     );
+
+    console.log('Translation successful. Translated text length:', translatedText.length);
+
+    // Check if user wants JSON response or PDF
+    const outputFormat = req.body.format || 'pdf';
+
+    if (outputFormat === 'json') {
+      // Return JSON with both original and translated text
+      await logTranslation(
+        clientIp,
+        detectedSourceLang || sourceLang || 'auto',
+        targetLang,
+        pdfData.pageCount,
+        pdfData.text.length,
+        req.file.originalname
+      );
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+      console.log(`✅ Translation completed in ${elapsed}s (JSON format)`);
+      console.log('='.repeat(50));
+
+      return res.json({
+        success: true,
+        originalText: pdfData.text,
+        translatedText: translatedText,
+        sourceLanguage: detectedSourceLang || sourceLang || 'auto',
+        targetLanguage: targetLang,
+        pageCount: pdfData.pageCount,
+        characterCount: pdfData.text.length
+      });
+    }
 
     // Create translated PDF
     const translatedPdfBuffer = await createTranslatedPDF(req.file.buffer, translatedText);
