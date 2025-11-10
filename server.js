@@ -102,7 +102,18 @@ async function translateText(text, targetLang, sourceLang = null) {
 // Extract text from PDF
 async function extractTextFromPDF(buffer) {
   try {
-    const data = await pdfParse(buffer);
+    console.log('Starting PDF parsing, buffer size:', buffer.length);
+    
+    // pdf-parse options to avoid canvas dependency issues
+    const options = {
+      max: 0, // parse all pages
+      version: 'v2.0.550' // use specific version
+    };
+    
+    const data = await pdfParse(buffer, options);
+    console.log('PDF parsed successfully. Pages:', data.numpages, 'Text length:', data.text.length);
+    console.log('First 200 chars:', data.text.substring(0, 200));
+    
     return {
       text: data.text,
       pageCount: data.numpages,
@@ -110,7 +121,8 @@ async function extractTextFromPDF(buffer) {
     };
   } catch (error) {
     console.error('PDF parsing error:', error);
-    throw new Error('PDFの読み込みに失敗しました');
+    console.error('Error stack:', error.stack);
+    throw new Error('PDFの読み込みに失敗しました: ' + error.message);
   }
 }
 
@@ -187,8 +199,14 @@ app.post('/api/translate', upload.single('file'), async (req, res) => {
     // Extract text from PDF
     const pdfData = await extractTextFromPDF(req.file.buffer);
 
+    console.log('Extracted text length:', pdfData.text.length);
+    console.log('Text content preview:', pdfData.text.substring(0, 100));
+
     if (!pdfData.text || pdfData.text.trim().length === 0) {
-      return res.status(400).json({ error: 'PDFからテキストを抽出できませんでした' });
+      console.error('Empty text extracted from PDF');
+      return res.status(400).json({ 
+        error: 'PDFからテキストを抽出できませんでした。このPDFは画像ベース（スキャン）の可能性があります。テキストレイヤーを持つPDFを使用してください。' 
+      });
     }
 
     // Translate text
