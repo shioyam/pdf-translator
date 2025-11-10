@@ -441,80 +441,24 @@
                     try {
                         const error = await response.json();
                         errorMessage = error.error || errorMessage;
-                        
-                        // If PDF creation failed, try getting JSON response
-                        if (errorMessage.includes('PDF') && errorMessage.includes('作成')) {
-                            showStatus('PDF作成エラー。テキストファイルとして再試行中...', 'info');
-                            await downloadAsText();
-                            return;
-                        }
                     } catch (e) {
                         errorMessage = `サーバーエラー (${response.status})`;
                     }
                     throw new Error(errorMessage);
                 }
 
-                // Check content type
-                const contentType = response.headers.get('content-type');
-                
-                if (contentType && contentType.includes('application/json')) {
-                    // JSON response - download as text file
-                    const data = await response.json();
-                    const textBlob = new Blob([data.translatedText], { type: 'text/plain;charset=utf-8' });
-                    const url = window.URL.createObjectURL(textBlob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `translated_${selectedFile.name.replace('.pdf', '.txt')}`;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                    showStatus('✅ 翻訳が完了しました！テキストファイルとしてダウンロードします。', 'success');
-                } else {
-                    // Download translated PDF
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `translated_${selectedFile.name}`;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                    showStatus('✅ 翻訳が完了しました！ダウンロードを開始します。', 'success');
-                }
+                // Download translated PDF
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `translated_${selectedFile.name}`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
 
-                // Helper function to download as text
-                async function downloadAsText() {
-                    const formDataText = new FormData();
-                    formDataText.append('file', selectedFile);
-                    formDataText.append('targetLang', targetLang.value);
-                    formDataText.append('format', 'json');
-                    if (sourceLang.value) {
-                        formDataText.append('sourceLang', sourceLang.value);
-                    }
-
-                    const textResponse = await fetch('/api/translate', {
-                        method: 'POST',
-                        body: formDataText
-                    });
-
-                    if (!textResponse.ok) {
-                        throw new Error('テキストファイルのダウンロードに失敗しました');
-                    }
-
-                    const data = await textResponse.json();
-                    const textBlob = new Blob([data.translatedText], { type: 'text/plain;charset=utf-8' });
-                    const url = window.URL.createObjectURL(textBlob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `translated_${selectedFile.name.replace('.pdf', '.txt')}`;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                    showStatus('✅ 翻訳が完了しました！テキストファイルとしてダウンロードします。', 'success');
-                }
+                showStatus('✅ 翻訳が完了しました！PDFをダウンロードします。', 'success');
 
             } catch (error) {
                 console.error('Translation error:', error);

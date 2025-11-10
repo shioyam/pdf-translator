@@ -6,7 +6,8 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const PDFKit = require('pdfkit');
 
 dotenv.config();
 
@@ -205,93 +206,72 @@ async function extractTextFromPDF(buffer) {
   }
 }
 
-// Create translated PDF
+// Create translated PDF using PDFKit (supports Unicode/Japanese)
 async function createTranslatedPDF(originalBuffer, translatedText) {
-  try {
-    console.log('Creating PDF. Text length:', translatedText.length);
-    
-    const pdfDoc = await PDFDocument.create();
-    
-    // Embed a standard font that supports more characters
-    const font = await pdfDoc.embedFont('Helvetica');
-    
-    const fontSize = 12;
-    const lineHeight = fontSize * 1.5;
-    const margin = 50;
-    const pageWidth = 595; // A4 width in points
-    const pageHeight = 842; // A4 height in points
-    const maxWidth = pageWidth - (margin * 2);
-    
-    // Split text into lines
-    const lines = [];
-    const paragraphs = translatedText.split('\n');
-    
-    for (const paragraph of paragraphs) {
-      if (!paragraph.trim()) {
-        lines.push(''); // Preserve empty lines
-        continue;
-      }
+  return new Promise((resolve, reject) => {
+    try {
+      console.log('Creating PDF with PDFKit. Text length:', translatedText.length);
       
-      // Word wrap for each paragraph
-      const words = paragraph.split(' ');
-      let currentLine = '';
+      // Create a new PDF document
+      const doc = new PDFKit({
+        size: 'A4',
+        margins: {
+          top: 50,
+          bottom: 50,
+          left: 50,
+          right: 50
+        },
+        bufferPages: true
+      });
+
+      // Collect the PDF data in chunks
+      const chunks = [];
+      doc.on('data', chunk => chunks.push(chunk));
+      doc.on('end', () => {
+        const pdfBuffer = Buffer.concat(chunks);
+        console.log(`PDF created successfully. Size: ${(pdfBuffer.length / 1024).toFixed(2)} KB`);
+        resolve(pdfBuffer);
+      });
+      doc.on('error', reject);
+
+      // Set font size and line height
+      doc.fontSize(12);
+      const lineHeight = 18;
+
+      // Split text into paragraphs
+      const paragraphs = translatedText.split('\n');
       
-      for (const word of words) {
-        const testLine = currentLine + (currentLine ? ' ' : '') + word;
-        const textWidth = font.widthOfTextAtSize(testLine, fontSize);
-        
-        if (textWidth < maxWidth) {
-          currentLine = testLine;
-        } else {
-          if (currentLine) lines.push(currentLine);
-          currentLine = word;
+      let isFirstParagraph = true;
+      
+      for (const paragraph of paragraphs) {
+        if (!paragraph.trim()) {
+          // Add space for empty lines
+          doc.moveDown(0.5);
+          continue;
         }
-      }
-      
-      if (currentLine) lines.push(currentLine);
-    }
-    
-    console.log(`Text split into ${lines.length} lines`);
-    
-    // Draw text on pages
-    let currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
-    let y = pageHeight - margin;
-    
-    for (const line of lines) {
-      // Check if we need a new page
-      if (y < margin + lineHeight) {
-        currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
-        y = pageHeight - margin;
-      }
-      
-      // Draw the line (only if it contains printable characters)
-      try {
-        if (line.trim()) {
-          currentPage.drawText(line, {
-            x: margin,
-            y: y,
-            size: fontSize,
-            font: font,
-            maxWidth: maxWidth
-          });
+
+        // Add some space between paragraphs (except for the first one)
+        if (!isFirstParagraph) {
+          doc.moveDown(0.3);
         }
-      } catch (drawError) {
-        // If drawing fails (e.g., unsupported characters), log and skip
-        console.warn('Failed to draw line:', line.substring(0, 50), drawError.message);
+        isFirstParagraph = false;
+
+        // PDFKit automatically handles text wrapping and page breaks
+        doc.text(paragraph, {
+          align: 'left',
+          lineGap: 3
+        });
       }
-      
-      y -= lineHeight;
+
+      // Finalize the PDF
+      doc.end();
+
+    } catch (error) {
+      console.error('PDF creation error:', error);
+      console.error('Error stack:', error.stack);
+      reject(new Error('翻訳済みPDFの作成に失敗しました: ' + error.message));
     }
-    
-    console.log(`PDF created with ${pdfDoc.getPageCount()} pages`);
-    
-    const pdfBytes = await pdfDoc.save();
-    return Buffer.from(pdfBytes);
-  } catch (error) {
-    console.error('PDF creation error:', error);
-    console.error('Error stack:', error.stack);
-    throw new Error('翻訳済みPDFの作成に失敗しました: ' + error.message);
-  }
+  });
 }
 
 // API endpoint: Translate PDF
