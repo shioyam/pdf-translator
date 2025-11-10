@@ -521,6 +521,65 @@ app.get('/api/languages', async (req, res) => {
   }
 });
 
+// API endpoint: Translate text (new)
+app.post('/api/translate-text', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    console.log('='.repeat(50));
+    console.log('📝 Text translation request received');
+
+    const { text, targetLang, sourceLang } = req.body;
+
+    if (!text || !text.trim()) {
+      console.log('❌ No text provided');
+      return res.status(400).json({ error: 'テキストが入力されていません' });
+    }
+
+    if (!targetLang) {
+      console.log('❌ No target language specified');
+      return res.status(400).json({ error: '翻訳先言語が指定されていません' });
+    }
+
+    if (text.length > 5000) {
+      console.log('❌ Text too long:', text.length);
+      return res.status(400).json({ error: 'テキストが長すぎます（最大5000文字）' });
+    }
+
+    const clientIp = getClientIp(req);
+    console.log(`🔍 Client IP: ${clientIp}`);
+    console.log(`📏 Text length: ${text.length} characters`);
+    console.log(`🌐 Translation: ${sourceLang || 'auto'} → ${targetLang}`);
+
+    // Translate text
+    const { translatedText, detectedSourceLang } = await translateText(
+      text,
+      targetLang,
+      sourceLang
+    );
+
+    console.log(`✅ Translation successful. Output length: ${translatedText.length}`);
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`⏱️ Completed in ${elapsed}s`);
+    console.log('='.repeat(50));
+
+    res.json({
+      success: true,
+      translatedText: translatedText,
+      detectedSourceLang: detectedSourceLang,
+      characterCount: text.length
+    });
+
+  } catch (error) {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.error(`❌ Text translation failed after ${elapsed}s:`, error.message);
+    console.log('='.repeat(50));
+    res.status(500).json({
+      error: error.message || 'テキスト翻訳中にエラーが発生しました'
+    });
+  }
+});
+
 // API endpoint: Get logs (admin only)
 app.get('/api/logs', async (req, res) => {
   try {
