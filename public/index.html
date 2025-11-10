@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepL PDF Translator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 60px 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+            margin-bottom: 30px;
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            transform: scale(1.02);
+        }
+
+        .upload-area.drag-over {
+            border-color: #764ba2;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+            color: #667eea;
+        }
+
+        .upload-text {
+            font-size: 1.3em;
+            color: #333;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .upload-subtext {
+            color: #999;
+            font-size: 0.95em;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .language-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .select-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 0.95em;
+        }
+
+        select {
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+            color: #333;
+        }
+
+        select:hover {
+            border-color: #667eea;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #764ba2;
+            box-shadow: 0 0 0 3px rgba(118, 75, 162, 0.1);
+        }
+
+        .translate-btn {
+            width: 100%;
+            padding: 18px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .translate-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .translate-btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .translate-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .file-info {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .file-info.show {
+            display: block;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .file-size {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .status-message {
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .status-message.show {
+            display: block;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            color: #999;
+            font-size: 0.85em;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 30px 20px;
+            }
+
+            h1 {
+                font-size: 2em;
+            }
+
+            .language-selector {
+                grid-template-columns: 1fr;
+            }
+
+            .upload-area {
+                padding: 40px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📄 DeepL PDF Translator</h1>
+        <p class="subtitle">PDFファイルを高品質に翻訳</p>
+
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📁</div>
+            <div class="upload-text">PDFファイルをドロップ または クリックして選択</div>
+            <div class="upload-subtext">最大10MBまで対応</div>
+        </div>
+
+        <input type="file" id="fileInput" class="file-input" accept="application/pdf" multiple>
+
+        <div class="file-info" id="fileInfo">
+            <div class="file-name" id="fileName"></div>
+            <div class="file-size" id="fileSize"></div>
+        </div>
+
+        <div class="language-selector">
+            <div class="select-group">
+                <label for="sourceLang">翻訳元言語</label>
+                <select id="sourceLang">
+                    <option value="">自動検出</option>
+                    <option value="EN">英語</option>
+                    <option value="JA">日本語</option>
+                    <option value="DE">ドイツ語</option>
+                    <option value="FR">フランス語</option>
+                    <option value="ES">スペイン語</option>
+                    <option value="IT">イタリア語</option>
+                    <option value="PT">ポルトガル語</option>
+                    <option value="RU">ロシア語</option>
+                    <option value="ZH">中国語</option>
+                    <option value="KO">韓国語</option>
+                </select>
+            </div>
+
+            <div class="select-group">
+                <label for="targetLang">翻訳先言語 *</label>
+                <select id="targetLang">
+                    <option value="JA">日本語</option>
+                    <option value="EN-US">英語（アメリカ）</option>
+                    <option value="EN-GB">英語（イギリス）</option>
+                    <option value="DE">ドイツ語</option>
+                    <option value="FR">フランス語</option>
+                    <option value="ES">スペイン語</option>
+                    <option value="IT">イタリア語</option>
+                    <option value="PT-PT">ポルトガル語</option>
+                    <option value="RU">ロシア語</option>
+                    <option value="ZH">中国語</option>
+                    <option value="KO">韓国語</option>
+                </select>
+            </div>
+        </div>
+
+        <button class="translate-btn" id="translateBtn" disabled>
+            翻訳する
+        </button>
+
+        <div class="status-message" id="statusMessage"></div>
+
+        <div class="footer">
+            Powered by DeepL API | All translations are processed securely
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const translateBtn = document.getElementById('translateBtn');
+        const statusMessage = document.getElementById('statusMessage');
+        const sourceLang = document.getElementById('sourceLang');
+        const targetLang = document.getElementById('targetLang');
+
+        let selectedFile = null;
+
+        // Upload area click
+        uploadArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // File input change
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        // Drag and drop events
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('drag-over');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('drag-over');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+
+            if (e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0];
+                if (file.type === 'application/pdf') {
+                    handleFile(file);
+                } else {
+                    showStatus('PDFファイルのみアップロード可能です', 'error');
+                }
+            }
+        });
+
+        function handleFile(file) {
+            selectedFile = file;
+            fileName.textContent = `📄 ${file.name}`;
+            fileSize.textContent = `ファイルサイズ: ${formatFileSize(file.size)}`;
+            fileInfo.classList.add('show');
+            translateBtn.disabled = false;
+            hideStatus();
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        translateBtn.addEventListener('click', async () => {
+            if (!selectedFile) {
+                showStatus('ファイルを選択してください', 'error');
+                return;
+            }
+
+            if (!targetLang.value) {
+                showStatus('翻訳先言語を選択してください', 'error');
+                return;
+            }
+
+            translateBtn.disabled = true;
+            translateBtn.innerHTML = '<span class="loading-spinner"></span> 翻訳中...';
+            showStatus('PDFを翻訳しています。しばらくお待ちください...', 'info');
+
+            try {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                formData.append('targetLang', targetLang.value);
+                if (sourceLang.value) {
+                    formData.append('sourceLang', sourceLang.value);
+                }
+
+                const response = await fetch('/api/translate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || '翻訳に失敗しました');
+                }
+
+                // Download translated PDF
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `translated_${selectedFile.name}`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                showStatus('✅ 翻訳が完了しました！ダウンロードを開始します。', 'success');
+
+            } catch (error) {
+                console.error('Translation error:', error);
+                showStatus(`❌ エラー: ${error.message}`, 'error');
+            } finally {
+                translateBtn.disabled = false;
+                translateBtn.innerHTML = '翻訳する';
+            }
+        });
+
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = `status-message ${type} show`;
+        }
+
+        function hideStatus() {
+            statusMessage.classList.remove('show');
+        }
+
+        // Load supported languages from API
+        async function loadLanguages() {
+            try {
+                const response = await fetch('/api/languages');
+                if (response.ok) {
+                    const languages = await response.json();
+                    console.log('Supported languages:', languages);
+                }
+            } catch (error) {
+                console.error('Error loading languages:', error);
+            }
+        }
+
+        loadLanguages();
+    </script>
+</body>
+</html>
