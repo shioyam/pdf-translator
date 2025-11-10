@@ -7,7 +7,7 @@ const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
-const PDFKit = require('pdfkit');
+const fontkit = require('@pdf-lib/fontkit');
 
 dotenv.config();
 
@@ -214,110 +214,135 @@ async function ensureJapaneseFont() {
   try {
     // Check if font already exists
     await fs.access(fontPath);
-    console.log('Japanese font already exists');
-    return fontPath;
+    console.log('✓ Japanese font already exists');
+    const fontBytes = await fs.readFile(fontPath);
+    return fontBytes;
   } catch (error) {
-    console.log('Downloading Japanese font...');
+    console.log('⬇ Downloading Japanese font from Google Fonts...');
     
     try {
       // Create fonts directory
       await fs.mkdir(fontDir, { recursive: true });
       
-      // Download Noto Sans JP from Google Fonts
-      const fontUrl = 'https://github.com/google/fonts/raw/main/ofl/notosansjp/NotoSansJP-Regular.ttf';
-      const response = await axios.get(fontUrl, { responseType: 'arraybuffer' });
+      // Download Noto Sans JP from reliable CDN
+      const fontUrl = 'https://github.com/google/fonts/raw/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf';
+      const response = await axios.get(fontUrl, { 
+        responseType: 'arraybuffer',
+        timeout: 30000,
+        maxContentLength: 50 * 1024 * 1024 // 50MB
+      });
       
       // Save font file
-      await fs.writeFile(fontPath, response.data);
-      console.log('Japanese font downloaded successfully');
+      await fs.writeFile(fontPath, Buffer.from(response.data));
+      console.log('✓ Japanese font downloaded and saved');
       
-      return fontPath;
+      return Buffer.from(response.data);
     } catch (downloadError) {
-      console.error('Failed to download font:', downloadError.message);
-      // Return null to use fallback
-      return null;
+      console.error('✗ Failed to download font:', downloadError.message);
+      throw new Error('日本語フォントのダウンロードに失敗しました');
     }
   }
 }
 
-// Create translated PDF using PDFKit with Japanese font support
+// Create translated PDF with proper Japanese font support
 async function createTranslatedPDF(originalBuffer, translatedText) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      console.log('Creating PDF with PDFKit. Text length:', translatedText.length);
+  try {
+    console.log('📄 Creating PDF with Japanese support. Text length:', translatedText.length);
+    
+    // Get Japanese font bytes
+    const fontBytes = await ensureJapaneseFont();
+    
+    // Create a new PDF document
+    const pdfDoc = await PDFDocument.create();
+    
+    // Register fontkit
+    pdfDoc.registerFontkit(fontkit);
+    
+    // Embed the Japanese font
+    console.log('🔤 Embedding Japanese font...');
+    const customFont = await pdfDoc.embedFont(fontBytes);
+    console.log('✓ Font embedded successfully');
+    
+    const fontSize = 11;
+    const lineHeight = fontSize * 1.6;
+    const margin = 50;
+    const pageWidth = 595; // A4 width
+    const pageHeight = 842; // A4 height
+    const maxWidth = pageWidth - (margin * 2);
+    
+    let currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
+    let y = pageHeight - margin;
+    
+    // Split text into paragraphs
+    const paragraphs = translatedText.split('\n');
+    
+    for (const paragraph of paragraphs) {
+      if (!paragraph.trim()) {
+        y -= lineHeight * 0.5; // Add space for empty lines
+        continue;
+      }
       
-      // Get Japanese font
-      const fontPath = await ensureJapaneseFont();
+      // Wrap text to fit page width
+      const words = paragraph.split(' ');
+      let currentLine = '';
       
-      // Create a new PDF document
-      const doc = new PDFKit({
-        size: 'A4',
-        margins: {
-          top: 50,
-          bottom: 50,
-          left: 50,
-          right: 50
-        },
-        bufferPages: true
-      });
-
-      // Collect the PDF data in chunks
-      const chunks = [];
-      doc.on('data', chunk => chunks.push(chunk));
-      doc.on('end', () => {
-        const pdfBuffer = Buffer.concat(chunks);
-        console.log(`PDF created successfully. Size: ${(pdfBuffer.length / 1024).toFixed(2)} KB`);
-        resolve(pdfBuffer);
-      });
-      doc.on('error', reject);
-
-      // Register and use Japanese font if available
-      if (fontPath) {
-        try {
-          doc.font(fontPath);
-          console.log('Using Japanese font');
-        } catch (fontError) {
-          console.warn('Failed to load Japanese font, using default:', fontError.message);
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i];
+        const testLine = currentLine + (currentLine ? ' ' : '') + word;
+        const textWidth = customFont.widthOfTextAtSize(testLine, fontSize);
+        
+        if (textWidth < maxWidth) {
+          currentLine = testLine;
+        } else {
+          // Draw current line
+          if (currentLine) {
+            if (y < margin) {
+              currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
+              y = pageHeight - margin;
+            }
+            
+            currentPage.drawText(currentLine, {
+              x: margin,
+              y: y,
+              size: fontSize,
+              font: customFont,
+              color: rgb(0, 0, 0)
+            });
+            
+            y -= lineHeight;
+          }
+          currentLine = word;
         }
       }
-
-      // Set font size
-      doc.fontSize(12);
-
-      // Split text into paragraphs
-      const paragraphs = translatedText.split('\n');
       
-      let isFirstParagraph = true;
-      
-      for (const paragraph of paragraphs) {
-        if (!paragraph.trim()) {
-          // Add space for empty lines
-          doc.moveDown(0.5);
-          continue;
+      // Draw remaining text
+      if (currentLine) {
+        if (y < margin) {
+          currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
+          y = pageHeight - margin;
         }
-
-        // Add some space between paragraphs (except for the first one)
-        if (!isFirstParagraph) {
-          doc.moveDown(0.3);
-        }
-        isFirstParagraph = false;
-
-        // PDFKit automatically handles text wrapping and page breaks
-        doc.text(paragraph, {
-          align: 'left',
-          lineGap: 3
+        
+        currentPage.drawText(currentLine, {
+          x: margin,
+          y: y,
+          size: fontSize,
+          font: customFont,
+          color: rgb(0, 0, 0)
         });
+        
+        y -= lineHeight;
       }
-
-      // Finalize the PDF
-      doc.end();
-
-    } catch (error) {
-      console.error('PDF creation error:', error);
-      console.error('Error stack:', error.stack);
-      reject(new Error('翻訳済みPDFの作成に失敗しました: ' + error.message));
     }
-  });
+    
+    console.log(`✓ PDF created with ${pdfDoc.getPageCount()} pages`);
+    
+    const pdfBytes = await pdfDoc.save();
+    return Buffer.from(pdfBytes);
+  } catch (error) {
+    console.error('PDF creation error:', error);
+    console.error('Error stack:', error.stack);
+    throw new Error('翻訳済みPDFの作成に失敗しました: ' + error.message);
+  }
 }
 
 // API endpoint: Translate PDF
